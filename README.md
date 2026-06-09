@@ -18,6 +18,9 @@ python3 harness.py backtest --pair ETHUSD --interval 1440 --strategy sma --fast 
 # Backtest RSI mean-reversion on hourly BTC
 python3 harness.py backtest --pair BTCUSD --interval 60 --strategy rsi --period 14
 
+# Long-horizon backtest from 2017 — the 50/200 golden/death cross (Yahoo daily history)
+python3 harness.py backtest --pair ETHUSD --source yahoo --strategy sma --fast 50 --slow 200
+
 # Paper-trade live: evaluate the signal once and act
 python3 harness.py live --pair ETHUSD --interval 1 --strategy sma --once
 
@@ -61,7 +64,8 @@ python3 harness.py live --pair ETHUSD --interval 1 --strategy sma --poll 60 --it
 |------|---------|
 | `harness.py` | CLI entry point (`strategies` / `backtest` / `live`) |
 | `kraken.py` | Locates the `kraken` binary; runs commands and parses JSON |
-| `data.py` | Fetches & parses OHLC candles |
+| `data.py` | Fetches & parses OHLC candles (Kraken, recent ~720) |
+| `data_yahoo.py` | Full daily OHLC history from Yahoo Finance (`--source yahoo`, no key) |
 | `strategies.py` | Strategy interface + `sma` (crossover) and `rsi` (mean-reversion) |
 | `backtest.py` | No-lookahead backtest engine with fees/slippage and metrics |
 | `paper.py` | Live loop wrapping `kraken paper` (all-in long / all-out flat) |
@@ -81,8 +85,9 @@ Both the backtest and live engines pick it up automatically.
 - **Fees & slippage** are applied on every fill; buy & hold is charged the same fees for a fair comparison.
 - **Long-only** (spot) — positions are all-in cash→asset or all-out asset→cash. A small (0.1%) cash
   buffer covers price drift between the quoted candle and the live market fill.
-- **Kraken OHLC history is bounded** (~720 candles per request), so daily candles cover ~2 years;
-  finer intervals cover proportionally less. Use `--since` to page further back.
+- **Kraken OHLC history is bounded** (~720 candles per request), so daily candles only cover ~2
+  years. For long-horizon backtests (e.g. the golden cross from 2017), use `--source yahoo`, which
+  pulls full daily history from Yahoo Finance (ETH-USD from late 2017). Live trading stays Kraken-only.
 - **Not financial advice. Paper trading only.** This is a learning/experimentation harness, not a
   production trading system — there is no risk management, position sizing, or order-retry logic.
 

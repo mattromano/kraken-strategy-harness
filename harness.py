@@ -15,12 +15,20 @@ Stdlib only — no pip installs. Requires the `kraken` CLI on PATH.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import sys
 
 import strategies
 from data import fetch_ohlc
+from data_yahoo import fetch_ohlc_yahoo, to_symbol
 from backtest import run_backtest
 from paper import PaperBroker, run_live
+
+
+def _to_epoch(date_str: str | None) -> int | None:
+    if not date_str:
+        return None
+    return int(dt.datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=dt.timezone.utc).timestamp())
 
 # Quote currencies tried (longest first) when splitting a pair like ETHUSD -> ETH/USD.
 _QUOTES = ["USDT", "USDC", "USD", "EUR", "GBP", "XBT", "BTC", "ETH"]
@@ -51,7 +59,14 @@ def cmd_strategies(_args) -> int:
 
 
 def cmd_backtest(args) -> int:
-    candles = fetch_ohlc(args.pair, args.interval, since=args.since)
+    if args.source == "yahoo":
+        base, quote = split_pair(args.pair)
+        symbol = to_symbol(args.pair, base, quote)
+        candles = fetch_ohlc_yahoo(symbol, args.interval, start=_to_epoch(args.start), end=_to_epoch(args.end))
+        market = f"{symbol} (yahoo)"
+    else:
+        candles = fetch_ohlc(args.pair, args.interval, since=args.since)
+        market = f"{args.pair} (kraken)"
     if len(candles) < 2:
         print("error: not enough candles returned", file=sys.stderr)
         return 1
@@ -59,10 +74,12 @@ def cmd_backtest(args) -> int:
     positions = strat.target_positions([c.close for c in candles])
     r = run_backtest(candles, positions, initial_cash=args.cash, fee=args.fee, slippage=args.slippage)
 
-    span = f"{candles[0].ts} → {candles[-1].ts}"
+    d0 = dt.datetime.utcfromtimestamp(candles[0].ts).date()
+    d1 = dt.datetime.utcfromtimestamp(candles[-1].ts).date()
+    span = f"{d0} → {d1}"
     edge = r.total_return - r.buy_hold_return
     print(f"\n  Strategy   : {strat.describe()}")
-    print(f"  Market     : {args.pair}  {args.interval}m  ({len(candles)} candles, {span})")
+    print(f"  Market     : {market}  {args.interval}m  ({len(candles)} candles, {span})")
     print(f"  Fees/slip  : {args.fee * 100:.3f}% / {args.slippage * 100:.3f}%")
     print("  " + "-" * 46)
     print(f"  Start cash : ${r.initial_cash:,.2f}")
@@ -99,11 +116,15 @@ def main(argv: list[str] | None = None) -> int:
 
     bt = sub.add_parser("backtest", help="Backtest a strategy on historical candles")
     bt.add_argument("--pair", default="ETHUSD")
+    bt.add_argument("--source", choices=["kraken", "yahoo"], default="kraken",
+                    help="kraken (recent ~720 candles) or yahoo (full daily history, e.g. ETH from 2017)")
     bt.add_argument("--interval", type=int, default=1440, help="candle minutes (1,5,15,30,60,240,1440,...)")
     bt.add_argument("--cash", type=float, default=10_000.0)
     bt.add_argument("--fee", type=float, default=0.0026, help="taker fee fraction (default 0.26%%)")
     bt.add_argument("--slippage", type=float, default=0.0, help="slippage fraction per fill")
-    bt.add_argument("--since", type=int, default=None, help="unix timestamp to fetch from")
+    bt.add_argument("--since", type=int, default=None, help="[kraken] unix timestamp to fetch from")
+    bt.add_argument("--start", default=None, help="[yahoo] start date YYYY-MM-DD")
+    bt.add_argument("--end", default=None, help="[yahoo] end date YYYY-MM-DD")
     add_strategy_args(bt)
     bt.set_defaults(func=cmd_backtest)
 
