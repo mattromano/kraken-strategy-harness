@@ -23,6 +23,8 @@ from data import fetch_ohlc
 from data_yahoo import fetch_ohlc_yahoo, to_symbol
 from backtest import run_backtest
 from paper import PaperBroker, run_live
+from ratio import align_ratio, zscore_positions
+from strategies import SmaCrossover
 
 
 def _to_epoch(date_str: str | None) -> int | None:
@@ -93,6 +95,44 @@ def cmd_backtest(args) -> int:
     return 0
 
 
+def cmd_ratio(args) -> int:
+    base, quote = split_pair(args.asset)
+    asset_sym = to_symbol(args.asset, base, quote)
+    asset = fetch_ohlc_yahoo(asset_sym, 1440, start=_to_epoch(args.start), end=_to_epoch(args.end))
+    ref = fetch_ohlc_yahoo(args.reference, 1440, start=_to_epoch(args.start), end=_to_epoch(args.end))
+    candles, r = align_ratio(asset, ref)
+    if len(candles) < 2:
+        print("error: not enough overlapping history to backtest", file=sys.stderr)
+        return 1
+
+    if args.mode == "momentum":
+        positions = SmaCrossover(args.fast, args.slow).target_positions(r)
+        desc = f"ratio momentum (SMA {args.fast}/{args.slow} on {asset_sym}/{args.reference})"
+    else:
+        positions = zscore_positions(r, args.window, args.entry, args.exit_z)
+        desc = (f"ratio reversion (z over {args.window}d on {asset_sym}/{args.reference}, "
+                f"buy z<-{args.entry}, sell z>{args.exit_z})")
+
+    res = run_backtest(candles, positions, initial_cash=args.cash, fee=args.fee, slippage=args.slippage)
+    d0 = dt.datetime.utcfromtimestamp(candles[0].ts).date()
+    d1 = dt.datetime.utcfromtimestamp(candles[-1].ts).date()
+    edge = res.total_return - res.buy_hold_return
+    print(f"\n  Strategy   : {desc}")
+    print(f"  Holds      : {asset_sym}  ({len(candles)} days, {d0} → {d1})")
+    print(f"  Ratio      : {r[0]:.6g} → {r[-1]:.6g}  ({asset_sym} per unit {args.reference})")
+    print(f"  Fees/slip  : {args.fee * 100:.3f}% / {args.slippage * 100:.3f}%")
+    print("  " + "-" * 46)
+    print(f"  Start cash : ${res.initial_cash:,.2f}")
+    print(f"  End equity : ${res.final_equity:,.2f}")
+    print(f"  Return     : {res.total_return * 100:+.2f}%")
+    print(f"  Buy & hold : {res.buy_hold_return * 100:+.2f}%  ({asset_sym} held)")
+    print(f"  Edge       : {edge * 100:+.2f}%  ({'beat' if edge > 0 else 'lagged'} buy & hold)")
+    print(f"  Trades     : {res.num_trades}  (win rate {res.win_rate * 100:.0f}%)")
+    print(f"  Max drawdn : {res.max_drawdown * 100:.2f}%")
+    print()
+    return 0
+
+
 def cmd_live(args) -> int:
     base, quote = (args.base, args.quote) if args.base else split_pair(args.pair)
     strat = strategies.build(args.strategy, args)
@@ -127,6 +167,22 @@ def main(argv: list[str] | None = None) -> int:
     bt.add_argument("--end", default=None, help="[yahoo] end date YYYY-MM-DD")
     add_strategy_args(bt)
     bt.set_defaults(func=cmd_backtest)
+
+    rt = sub.add_parser("ratio", help="Trade a crypto asset off its ratio to a reference index (Yahoo)")
+    rt.add_argument("--asset", default="ETHUSD", help="crypto asset to hold (e.g. ETHUSD, BTCUSD)")
+    rt.add_argument("--reference", default="^IXIC", help="Yahoo reference ticker (^IXIC Nasdaq, ^RUT Russell 2000, IWM, BTC-USD)")
+    rt.add_argument("--mode", choices=["momentum", "reversion"], default="momentum")
+    rt.add_argument("--fast", type=int, default=50, help="[momentum] ratio fast SMA")
+    rt.add_argument("--slow", type=int, default=200, help="[momentum] ratio slow SMA")
+    rt.add_argument("--window", type=int, default=100, help="[reversion] z-score lookback (days)")
+    rt.add_argument("--entry", type=float, default=1.0, help="[reversion] buy when z < -entry")
+    rt.add_argument("--exit", dest="exit_z", type=float, default=0.0, help="[reversion] sell when z > exit")
+    rt.add_argument("--cash", type=float, default=10_000.0)
+    rt.add_argument("--fee", type=float, default=0.0026)
+    rt.add_argument("--slippage", type=float, default=0.0)
+    rt.add_argument("--start", default=None, help="start date YYYY-MM-DD")
+    rt.add_argument("--end", default=None, help="end date YYYY-MM-DD")
+    rt.set_defaults(func=cmd_ratio)
 
     lv = sub.add_parser("live", help="Run a strategy live against kraken paper")
     lv.add_argument("--pair", default="ETHUSD")

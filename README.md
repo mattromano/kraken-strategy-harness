@@ -21,6 +21,10 @@ python3 harness.py backtest --pair BTCUSD --interval 60 --strategy rsi --period 
 # Long-horizon backtest from 2017 — the 50/200 golden/death cross (Yahoo daily history)
 python3 harness.py backtest --pair ETHUSD --source yahoo --strategy sma --fast 50 --slow 200
 
+# Relative-value: trade ETH off its ratio to an equity index (novel)
+python3 harness.py ratio --asset ETHUSD --reference '^RUT'  --mode momentum --fast 50 --slow 200
+python3 harness.py ratio --asset ETHUSD --reference '^IXIC' --mode reversion --window 100 --entry 1.0
+
 # Paper-trade live: evaluate the signal once and act
 python3 harness.py live --pair ETHUSD --interval 1 --strategy sma --once
 
@@ -66,6 +70,7 @@ python3 harness.py live --pair ETHUSD --interval 1 --strategy sma --poll 60 --it
 | `kraken.py` | Locates the `kraken` binary; runs commands and parses JSON |
 | `data.py` | Fetches & parses OHLC candles (Kraken, recent ~720) |
 | `data_yahoo.py` | Full daily OHLC history from Yahoo Finance (`--source yahoo`, no key) |
+| `ratio.py` | Relative-value engine: align asset/reference, ratio momentum & z-score reversion |
 | `strategies.py` | Strategy interface + `sma` (crossover) and `rsi` (mean-reversion) |
 | `backtest.py` | No-lookahead backtest engine with fees/slippage and metrics |
 | `paper.py` | Live loop wrapping `kraken paper` (all-in long / all-out flat) |
