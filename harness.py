@@ -182,6 +182,22 @@ def compute_signal(asset_pair: str, reference: str, fast: int, slow: int) -> dic
     }
 
 
+def cmd_chart(args) -> int:
+    import chart as chartmod
+    candles, positions, result, meta = chartmod.build_chart_data(
+        args.asset, args.reference, args.fast, args.slow, split_pair,
+        fee=args.fee, slippage=args.slippage)
+    html = chartmod.render_html(candles, positions, result, meta)
+    with open(args.out, "w") as f:
+        f.write(html)
+    buys = sum(1 for i in range(1, len(positions)) if positions[i] == 1 and positions[i-1] == 0)
+    sells = sum(1 for i in range(1, len(positions)) if positions[i] == 0 and positions[i-1] == 1)
+    print(f"wrote {args.out}  ({len(candles)} candles, {buys} buys / {sells} sells)")
+    print(f"  strategy: {meta['strat_label']}")
+    print(f"  open it:  open {args.out}")
+    return 0
+
+
 def cmd_signal(args) -> int:
     sig = compute_signal(args.asset, args.reference, args.fast, args.slow)
     if args.json:
@@ -219,6 +235,16 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("strategies", help="List available strategies").set_defaults(func=cmd_strategies)
+
+    ch = sub.add_parser("chart", help="Generate a self-contained HTML OHLC chart with buy/sell markers")
+    ch.add_argument("--asset", default="ETHUSD")
+    ch.add_argument("--reference", default="^RUT", help="Yahoo reference for ratio strategy; 'none' for price SMA crossover")
+    ch.add_argument("--fast", type=int, default=20)
+    ch.add_argument("--slow", type=int, default=50)
+    ch.add_argument("--fee", type=float, default=0.0026)
+    ch.add_argument("--slippage", type=float, default=0.001)
+    ch.add_argument("--out", default="chart.html", help="output HTML file path")
+    ch.set_defaults(func=cmd_chart)
 
     sg = sub.add_parser("signal", help="Show today's ratio-momentum stance (LONG/FLAT) for an asset/reference")
     sg.add_argument("--asset", default="ETHUSD")

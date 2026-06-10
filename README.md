@@ -149,6 +149,24 @@ number (here $100k) can still be overfit; only out-of-sample testing tells them 
 
 > ⚠️ Backtest results on one asset over one historical window. Not predictive, not advice, paper only.
 
+## Visualize the signals (HTML chart)
+
+Generate a self-contained, dark-themed candlestick chart with a green ▲ at every BUY and a red ▼
+at every SELL, plus a stats header (return, Sharpe, drawdown, current stance):
+
+```bash
+# The robust ETH/Russell signal (default):
+python3 harness.py chart --asset ETHUSD --reference '^RUT' --fast 20 --slow 50 --out eth_russell.html
+
+# The price golden cross instead (reference 'none' -> plain price SMA crossover):
+python3 harness.py chart --asset ETHUSD --reference none --fast 50 --slow 200 --out eth_golden_cross.html
+
+open eth_russell.html   # macOS; or just open the file in any browser
+```
+
+Output is one portable `.html` file (candles + markers embedded as JSON, charting lib from CDN) —
+no build step, no dependencies. Generated charts are git-ignored since they're regenerable.
+
 ## Daily signal monitor (GitHub Actions)
 
 A scheduled workflow (`.github/workflows/daily-signal.yml`) checks the robust ETH/Russell signal

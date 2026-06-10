@@ -6,3 +6,7 @@ venv/
 
 # macOS
 .DS_Store
+
+# Generated chart output (regenerable via `harness.py chart`)
+*.html
+!README*.html
