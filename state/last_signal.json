@@ -4,15 +4,16 @@
   "reference": "^RUT",
   "fast": 20,
   "slow": 50,
+  "rsi_exit": 45.0,
   "stance": "FLAT",
   "long": false,
-  "asset_price": 1639.69,
+  "asset_price": 1643.61,
   "reference_level": 2867.02,
-  "ratio": 0.574238,
-  "fast_sma": 0.662567,
-  "slow_sma": 0.752419,
+  "ratio": 0.575611,
+  "fast_sma": 0.662636,
+  "slow_sma": 0.752446,
   "fast_vs_slow_pct": -11.94,
-  "last_flip_date": "2026-04-29",
+  "last_flip_date": "2026-05-15",
   "last_flip_action": "SELL",
-  "last_flip_price": 2253.42
+  "last_flip_price": 2223.33
 }

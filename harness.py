@@ -25,7 +25,7 @@ from data_yahoo import fetch_ohlc_yahoo, to_symbol
 from backtest import run_backtest
 from paper import PaperBroker, run_live
 from ratio import align_ratio, zscore_positions
-from strategies import SmaCrossover, sma
+from strategies import SmaCrossover, sma, rsi_exit_delay
 
 
 def _to_epoch(date_str: str | None) -> int | None:
@@ -111,6 +111,9 @@ def cmd_ratio(args) -> int:
     if args.mode == "momentum":
         positions = SmaCrossover(args.fast, args.slow).target_positions(r)
         desc = f"ratio momentum (SMA {args.fast}/{args.slow} on {asset_sym}/{args.reference})"
+        if args.rsi_exit is not None:
+            positions = rsi_exit_delay(positions, [c.close for c in candles], args.rsi_period, args.rsi_exit)
+            desc += f" + RSI({args.rsi_period}) exit-delay >{args.rsi_exit:g}"
     else:
         positions = zscore_positions(r, args.window, args.entry, args.exit_z)
         desc = (f"ratio reversion (z over {args.window}d on {asset_sym}/{args.reference}, "
@@ -138,8 +141,12 @@ def cmd_ratio(args) -> int:
     return 0
 
 
-def compute_signal(asset_pair: str, reference: str, fast: int, slow: int) -> dict:
-    """Compute today's ratio-momentum stance (LONG/FLAT) and recent context."""
+def compute_signal(asset_pair: str, reference: str, fast: int, slow: int,
+                   rsi_exit: float | None = None, rsi_period: int = 14) -> dict:
+    """Compute today's ratio-momentum stance (LONG/FLAT) and recent context.
+
+    If rsi_exit is set, apply the validated 'let winners run' RSI exit-delay overlay.
+    """
     base, quote = split_pair(asset_pair)
     asset_sym = to_symbol(asset_pair, base, quote)
     asset = fetch_ohlc_yahoo(asset_sym, 1440)
@@ -149,6 +156,8 @@ def compute_signal(asset_pair: str, reference: str, fast: int, slow: int) -> dic
         raise RuntimeError("not enough overlapping history to compute the signal")
 
     pos = SmaCrossover(fast, slow).target_positions(r)
+    if rsi_exit is not None:
+        pos = rsi_exit_delay(pos, [c.close for c in cand], rsi_period, rsi_exit)
     f, s = sma(r, fast), sma(r, slow)
     dates = [dt.datetime.utcfromtimestamp(c.ts).date() for c in cand]
 
@@ -168,6 +177,7 @@ def compute_signal(asset_pair: str, reference: str, fast: int, slow: int) -> dic
         "reference": reference,
         "fast": fast,
         "slow": slow,
+        "rsi_exit": rsi_exit,
         "stance": "LONG" if pos[-1] == 1 else "FLAT",
         "long": bool(pos[-1] == 1),
         "asset_price": round(cand[-1].close, 2),
@@ -186,7 +196,8 @@ def cmd_chart(args) -> int:
     import chart as chartmod
     candles, positions, result, meta = chartmod.build_chart_data(
         args.asset, args.reference, args.fast, args.slow, split_pair,
-        fee=args.fee, slippage=args.slippage)
+        fee=args.fee, slippage=args.slippage,
+        rsi_exit=args.rsi_exit, rsi_period=args.rsi_period)
     html = chartmod.render_html(candles, positions, result, meta)
     with open(args.out, "w") as f:
         f.write(html)
@@ -199,7 +210,8 @@ def cmd_chart(args) -> int:
 
 
 def cmd_signal(args) -> int:
-    sig = compute_signal(args.asset, args.reference, args.fast, args.slow)
+    sig = compute_signal(args.asset, args.reference, args.fast, args.slow,
+                         rsi_exit=args.rsi_exit, rsi_period=args.rsi_period)
     if args.json:
         print(json.dumps(sig, indent=2))
         return 0
@@ -243,6 +255,9 @@ def main(argv: list[str] | None = None) -> int:
     ch.add_argument("--slow", type=int, default=50)
     ch.add_argument("--fee", type=float, default=0.0026)
     ch.add_argument("--slippage", type=float, default=0.001)
+    ch.add_argument("--rsi-exit", type=float, default=None,
+                    help="apply RSI exit-delay overlay: hold through a SELL while price RSI > this (e.g. 45)")
+    ch.add_argument("--rsi-period", type=int, default=14)
     ch.add_argument("--out", default="chart.html", help="output HTML file path")
     ch.set_defaults(func=cmd_chart)
 
@@ -251,6 +266,9 @@ def main(argv: list[str] | None = None) -> int:
     sg.add_argument("--reference", default="^RUT", help="Yahoo reference ticker (default Russell 2000)")
     sg.add_argument("--fast", type=int, default=20)
     sg.add_argument("--slow", type=int, default=50)
+    sg.add_argument("--rsi-exit", type=float, default=None,
+                    help="apply validated RSI exit-delay overlay (e.g. 45)")
+    sg.add_argument("--rsi-period", type=int, default=14)
     sg.add_argument("--json", action="store_true", help="emit JSON (used by the daily GHA workflow)")
     sg.set_defaults(func=cmd_signal)
 
@@ -277,6 +295,9 @@ def main(argv: list[str] | None = None) -> int:
     rt.add_argument("--window", type=int, default=100, help="[reversion] z-score lookback (days)")
     rt.add_argument("--entry", type=float, default=1.0, help="[reversion] buy when z < -entry")
     rt.add_argument("--exit", dest="exit_z", type=float, default=0.0, help="[reversion] sell when z > exit")
+    rt.add_argument("--rsi-exit", type=float, default=None,
+                    help="[momentum] validated RSI exit-delay overlay: hold through SELL while price RSI > this (e.g. 45)")
+    rt.add_argument("--rsi-period", type=int, default=14)
     rt.add_argument("--cash", type=float, default=10_000.0)
     rt.add_argument("--fee", type=float, default=0.0026)
     rt.add_argument("--slippage", type=float, default=0.0)

@@ -17,7 +17,7 @@ import json
 from data import Candle
 from data_yahoo import fetch_ohlc_yahoo, to_symbol
 from ratio import align_ratio
-from strategies import SmaCrossover
+from strategies import SmaCrossover, rsi_exit_delay
 from backtest import run_backtest
 
 
@@ -26,8 +26,13 @@ def _date(ts: int) -> str:
 
 
 def build_chart_data(asset_pair: str, reference: str, fast: int, slow: int,
-                     split_pair, fee: float = 0.0026, slippage: float = 0.001):
-    """Return (candles, positions, result, meta) for charting."""
+                     split_pair, fee: float = 0.0026, slippage: float = 0.001,
+                     rsi_exit: float | None = None, rsi_period: int = 14):
+    """Return (candles, positions, result, meta) for charting.
+
+    If `rsi_exit` is set, apply the 'let winners run' RSI exit-delay overlay on top
+    of the base signal (hold through a base SELL while price RSI > rsi_exit).
+    """
     base, quote = split_pair(asset_pair)
     asset_sym = to_symbol(asset_pair, base, quote)
     asset = fetch_ohlc_yahoo(asset_sym, 1440)
@@ -43,6 +48,9 @@ def build_chart_data(asset_pair: str, reference: str, fast: int, slow: int,
         strat_label = f"{asset_sym} price SMA crossover  {fast}/{slow}"
 
     positions = SmaCrossover(fast, slow).target_positions(series)
+    if rsi_exit is not None:
+        positions = rsi_exit_delay(positions, [c.close for c in candles], rsi_period, rsi_exit)
+        strat_label += f"  + RSI({rsi_period}) exit-delay &gt;{rsi_exit:g}"
     result = run_backtest(candles, positions, fee=fee, slippage=slippage)
     meta = {
         "asset": asset_sym,

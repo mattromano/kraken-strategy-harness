@@ -110,6 +110,15 @@ return multiple** instead of raw return flips the verdict:
 - Walk-forward *optimization* (re-pick best Sharpe on a rolling 3y train, trade it blind the next
   year) beat buy & hold in **5 of 6 test years**.
 
+**The RSI exit-delay overlay (a validated improvement).** The base signal re-enters late and bails
+on shallow dips, missing the first leg of recoveries (e.g. a 2025 whipsaw: sold $2,422 → rebought
+$3,372). Adding a "let winners run" rule — *when the ratio flips to SELL but ETH's RSI is still
+strong (>45), hold instead of exiting* — fixes exactly that. It held through the June 2025 dip and
+rode ETH from ~$2,200 to a $4,200 exit, **with fewer trades, not more**. It survived out-of-sample
+(Sharpe 1.36 vs base 1.10, 3.9× buy-hold) and walk-forward. Enable it with `--rsi-exit 45` on the
+`ratio`, `signal`, and `chart` commands. *(What did NOT survive: oversold-RSI buy overrides and a
+trailing-1yr-return filter — both mean-reversion ideas that fight the trend; tested, rejected.)*
+
 **The takeaway.** The signal is real and robust — but it's a **drawdown-reducer / risk-adjusted-
 return improver, not a return-maximizer.** It gives up a little in melt-ups and protects hard
 everywhere else. And the bigger lesson: **never judge a backtest on raw total return** — always look
@@ -158,6 +167,9 @@ at every SELL, plus a stats header (return, Sharpe, drawdown, current stance):
 # The robust ETH/Russell signal (default):
 python3 harness.py chart --asset ETHUSD --reference '^RUT' --fast 20 --slow 50 --out eth_russell.html
 
+# With the validated RSI exit-delay overlay (fewer trades, holds through shallow dips):
+python3 harness.py chart --asset ETHUSD --reference '^RUT' --fast 20 --slow 50 --rsi-exit 45 --out eth_russell_overlay.html
+
 # The price golden cross instead (reference 'none' -> plain price SMA crossover):
 python3 harness.py chart --asset ETHUSD --reference none --fast 50 --slow 200 --out eth_golden_cross.html
 
@@ -169,14 +181,14 @@ no build step, no dependencies. Generated charts are git-ignored since they're r
 
 ## Daily signal monitor (GitHub Actions)
 
-A scheduled workflow (`.github/workflows/daily-signal.yml`) checks the robust ETH/Russell signal
-once a day and **opens a GitHub issue when the stance flips** (FLAT ↔ LONG) — so you get an email
-without running anything yourself.
+A scheduled workflow (`.github/workflows/daily-signal.yml`) checks the validated ETH/Russell signal
+(with the RSI exit-delay overlay) once a day and **opens a GitHub issue when the stance flips**
+(FLAT ↔ LONG) — so you get an email without running anything yourself.
 
 ```bash
-# Check the live stance yourself anytime:
-python3 harness.py signal --asset ETHUSD --reference '^RUT' --fast 20 --slow 50
-python3 harness.py signal --json     # machine-readable (what the workflow consumes)
+# Check the live stance yourself anytime (same config the monitor uses):
+python3 harness.py signal --asset ETHUSD --reference '^RUT' --fast 20 --slow 50 --rsi-exit 45
+python3 harness.py signal --rsi-exit 45 --json   # machine-readable (what the workflow consumes)
 ```
 
 - Runs daily at 13:00 UTC (and on-demand via the Actions tab).

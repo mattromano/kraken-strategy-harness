@@ -30,7 +30,7 @@ jobs:
       - name: Compute current signal
         id: sig
         run: |
-          python3 harness.py signal --asset ETHUSD --reference '^RUT' --fast 20 --slow 50 --json > current.json
+          python3 harness.py signal --asset ETHUSD --reference '^RUT' --fast 20 --slow 50 --rsi-exit 45 --json > current.json
           cat current.json
           {
             echo "stance=$(python3 -c "import json;print(json.load(open('current.json'))['stance'])")"

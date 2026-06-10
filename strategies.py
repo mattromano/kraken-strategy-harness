@@ -40,6 +40,28 @@ def rsi(values: list[float], period: int) -> list[float | None]:
     return out
 
 
+def rsi_exit_delay(base_positions: list[int], price_closes: list[float],
+                   period: int = 14, threshold: float = 45.0) -> list[int]:
+    """Overlay: 'let winners run' — hold a long through a base SELL while price RSI stays strong.
+
+    Entries follow the base strategy unchanged. The only difference: when the base flips to
+    flat but price RSI is still above `threshold` (momentum intact), stay long instead of
+    exiting. This captures upside the lagging base signal would prematurely give up.
+    """
+    r = rsi(price_closes, period)
+    out: list[int] = []
+    state = 0
+    for i in range(len(base_positions)):
+        if base_positions[i] == 1:
+            state = 1
+        elif state == 1 and r[i] is not None and r[i] > threshold:
+            state = 1  # base says exit, but momentum still strong -> hold
+        else:
+            state = 0
+        out.append(state)
+    return out
+
+
 class Strategy:
     name = "base"
 
