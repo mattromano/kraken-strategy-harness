@@ -121,6 +121,34 @@ by default.
 python3 harness.py ratio --asset ETHUSD --reference '^RUT' --mode momentum --fast 20 --slow 50 --slippage 0.001
 ```
 
+### Every strategy, head-to-head — $10,000 → ?
+
+All strategies, same window (ETH-USD daily, 2017-11-09 → 2026-06-10, 3,135 days), same costs
+(0.26% fee + 0.1% slippage per fill), sorted by final balance:
+
+| Strategy | Final $ | Return | CAGR | Sharpe | Max DD | Trades |
+|----------|--------:|-------:|-----:|-------:|-------:|-------:|
+| **ETH/Russell momentum 20/50** ⭐ | **$198,453** | +1885% | +41.6% | 0.88 | −69% | 31 |
+| ETH/S&P 500 momentum 20/50 | $158,137 | +1481% | +37.9% | 0.84 | −64% | 28 |
+| ETH price SMA 20/50 | $132,996 | +1230% | +35.2% | 0.80 | −67% | 29 |
+| ETH/Russell momentum 50/200 *(overfit)* | $100,543 | +905% | +30.8% | 0.76 | −77% | 7 |
+| ETH price golden cross 50/200 | $67,883 | +579% | +25.0% | 0.68 | −78% | 8 |
+| Buy & Hold ETH | $50,997 | +410% | +20.9% | 0.65 | **−94%** | 0 |
+| ETH/Nasdaq momentum 20/50 | $46,985 | +370% | +19.7% | 0.61 | −73% | 33 |
+| RSI(14) mean-reversion | $5,343 | −47% | −7.0% | 0.10 | −78% | 11 |
+| ETH/Russell z-reversion *(disaster)* | $2,290 | −77% | −15.8% | −0.07 | −84% | 16 |
+
+⭐ The only strategy that survived **both** out-of-sample and walk-forward validation.
+
+**Reading it:** every *momentum* variant beat buy & hold, in the risk-appetite order the thesis
+predicted (Russell > S&P > raw ETH > Nasdaq), and all of them roughly halved buy & hold's brutal
+−94% drawdown. The robust ETH/Russell signal made **~4.6× more money than holding, with a third less
+drawdown.** The *mean-reversion* variants lost money fighting a trending asset — knowing what
+*doesn't* work is a result too. And the 50/200 entries are a reminder that a great full-sample
+number (here $100k) can still be overfit; only out-of-sample testing tells them apart.
+
+> ⚠️ Backtest results on one asset over one historical window. Not predictive, not advice, paper only.
+
 ## Design notes & caveats
 
 - **No look-ahead:** the position decided at candle *i-1*'s close is executed at candle *i*'s open.
