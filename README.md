@@ -84,10 +84,49 @@ Add your own: subclass `Strategy` in `strategies.py`, implement
 `target_positions(closes) -> list[int]` (0/1), and register it in the `STRATEGIES` dict.
 Both the backtest and live engines pick it up automatically.
 
+## Case study: the ETH / Russell-2000 relative-value signal
+
+A worked example of using the harness to vet a *novel* idea — trading ETH off its ratio to an
+equity risk index (`ratio` command) — and the methodology lessons that came out of it.
+
+**The idea.** ETH is a high-beta risk asset. Small-caps (Russell 2000) are the purest risk-on/
+risk-off barometer in equities. So `ETH-USD / ^RUT` momentum should track crypto's risk appetite —
+and it does, beating buy & hold across a parameter sweep and beating Nasdaq/S&P as the denominator.
+
+**The trap — raw returns lie across regimes.** On the full 2017→2026 sample the slow `50/200` and
+`100/200` params posted gaudy returns (+900% to +1700%). But an out-of-sample split (fit 2017–22,
+test 2023–26) showed they **collapsed** — the numbers were inflated by the 2020–21 parabolic bull
+sitting in the training window. Raw total return measures *the market's generosity*, not the
+strategy's skill.
+
+**The fix — risk-adjusted, regime-neutral metrics.** Comparing **Sharpe** and the **buy-&-hold
+return multiple** instead of raw return flips the verdict:
+
+- The fast `20/50` param — which looked *worse* on raw OOS return — actually had **higher Sharpe,
+  more than 2× the buy-&-hold multiple, and half the drawdown** out-of-sample. Its edge *grew*.
+- Walk-forward (fixed `20/50` by calendar year) beat buy & hold on Sharpe in **7 of 9 years** — it
+  only "lost" in the two parabolic bull years (2020, 2021), when nothing beats holding a vertical
+  asset. In every bear/chop/normal year it won by cutting losses hard.
+- Walk-forward *optimization* (re-pick best Sharpe on a rolling 3y train, trade it blind the next
+  year) beat buy & hold in **5 of 6 test years**.
+
+**The takeaway.** The signal is real and robust — but it's a **drawdown-reducer / risk-adjusted-
+return improver, not a return-maximizer.** It gives up a little in melt-ups and protects hard
+everywhere else. And the bigger lesson: **never judge a backtest on raw total return** — always look
+at CAGR, Sharpe, drawdown, and out-of-sample / walk-forward behavior. The engine now reports these
+by default.
+
+```bash
+# Reproduce the robust signal:
+python3 harness.py ratio --asset ETHUSD --reference '^RUT' --mode momentum --fast 20 --slow 50 --slippage 0.001
+```
+
 ## Design notes & caveats
 
 - **No look-ahead:** the position decided at candle *i-1*'s close is executed at candle *i*'s open.
 - **Fees & slippage** are applied on every fill; buy & hold is charged the same fees for a fair comparison.
+- **Risk-adjusted metrics** (CAGR, annualized Sharpe, max drawdown, buy-&-hold multiple) are reported
+  alongside raw return — because raw return alone is misleading across regimes (see the case study above).
 - **Long-only** (spot) — positions are all-in cash→asset or all-out asset→cash. A small (0.1%) cash
   buffer covers price drift between the quoted candle and the live market fill.
 - **Kraken OHLC history is bounded** (~720 candles per request), so daily candles only cover ~2
