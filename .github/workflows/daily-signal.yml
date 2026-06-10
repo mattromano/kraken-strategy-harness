@@ -1,0 +1,90 @@
+name: Daily ETH/Russell Signal
+
+# Runs the robust ETH/Russell-2000 ratio-momentum signal once a day.
+# On a stance change (FLAT <-> LONG) it opens a GitHub issue (which emails repo
+# watchers) and commits the new state. No real trading — informational only.
+
+on:
+  schedule:
+    - cron: "0 13 * * *"   # 13:00 UTC daily (~9am ET). GitHub cron may lag at peak times.
+  workflow_dispatch: {}     # allow manual runs from the Actions tab
+
+permissions:
+  contents: write   # commit the updated state file
+  issues: write     # open an issue when the signal flips
+
+concurrency:
+  group: daily-signal
+  cancel-in-progress: false
+
+jobs:
+  signal:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compute current signal
+        id: sig
+        run: |
+          python3 harness.py signal --asset ETHUSD --reference '^RUT' --fast 20 --slow 50 --json > current.json
+          cat current.json
+          {
+            echo "stance=$(python3 -c "import json;print(json.load(open('current.json'))['stance'])")"
+            echo "date=$(python3 -c "import json;print(json.load(open('current.json'))['date'])")"
+            echo "price=$(python3 -c "import json;print(json.load(open('current.json'))['asset_price'])")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Detect flip vs last known state
+        id: flip
+        run: |
+          prev="(none)"
+          if [ -f state/last_signal.json ]; then
+            prev=$(python3 -c "import json;print(json.load(open('state/last_signal.json'))['stance'])")
+          fi
+          echo "prev=$prev" >> "$GITHUB_OUTPUT"
+          if [ "$prev" != "${{ steps.sig.outputs.stance }}" ]; then
+            echo "flipped=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "flipped=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Write run summary
+        run: |
+          {
+            echo "## ETH/Russell signal — ${{ steps.sig.outputs.date }}"
+            echo ""
+            echo "**Stance: ${{ steps.sig.outputs.stance }}**  (was ${{ steps.flip.outputs.prev }})"
+            echo ""
+            echo '```json'
+            cat current.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open issue on flip
+        if: steps.flip.outputs.flipped == 'true' && steps.flip.outputs.prev != '(none)'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --title "📡 ETH/Russell signal → ${{ steps.sig.outputs.stance }} (was ${{ steps.flip.outputs.prev }})" \
+            --body "$(printf 'The ETH/Russell-2000 20/50 momentum signal flipped on **%s**.\n\n- **New stance:** %s\n- **Previous:** %s\n- **ETH price:** $%s\n\n```json\n%s\n```\n\n_Informational only — paper/backtest research, not financial advice._' \
+              "${{ steps.sig.outputs.date }}" "${{ steps.sig.outputs.stance }}" "${{ steps.flip.outputs.prev }}" "${{ steps.sig.outputs.price }}" "$(cat current.json)")"
+
+      - name: Persist new state (only on change)
+        if: steps.flip.outputs.flipped == 'true'
+        run: |
+          mkdir -p state
+          cp current.json state/last_signal.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state/last_signal.json
+          git commit -m "signal: ${{ steps.flip.outputs.prev }} -> ${{ steps.sig.outputs.stance }} (${{ steps.sig.outputs.date }})"
+          git push
+
+      - name: Clean up
+        if: always()
+        run: rm -f current.json

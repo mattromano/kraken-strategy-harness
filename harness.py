@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 import sys
 
 import strategies
@@ -24,7 +25,7 @@ from data_yahoo import fetch_ohlc_yahoo, to_symbol
 from backtest import run_backtest
 from paper import PaperBroker, run_live
 from ratio import align_ratio, zscore_positions
-from strategies import SmaCrossover
+from strategies import SmaCrossover, sma
 
 
 def _to_epoch(date_str: str | None) -> int | None:
@@ -137,6 +138,67 @@ def cmd_ratio(args) -> int:
     return 0
 
 
+def compute_signal(asset_pair: str, reference: str, fast: int, slow: int) -> dict:
+    """Compute today's ratio-momentum stance (LONG/FLAT) and recent context."""
+    base, quote = split_pair(asset_pair)
+    asset_sym = to_symbol(asset_pair, base, quote)
+    asset = fetch_ohlc_yahoo(asset_sym, 1440)
+    ref = fetch_ohlc_yahoo(reference, 1440)
+    cand, r = align_ratio(asset, ref)
+    if len(cand) < slow + 2:
+        raise RuntimeError("not enough overlapping history to compute the signal")
+
+    pos = SmaCrossover(fast, slow).target_positions(r)
+    f, s = sma(r, fast), sma(r, slow)
+    dates = [dt.datetime.utcfromtimestamp(c.ts).date() for c in cand]
+
+    # most recent flip
+    flip_date = flip_action = None
+    flip_price = None
+    for i in range(len(pos) - 1, 0, -1):
+        if pos[i] != pos[i - 1]:
+            flip_date = dates[i].isoformat()
+            flip_action = "BUY" if pos[i] == 1 else "SELL"
+            flip_price = round(cand[i].close, 2)
+            break
+
+    return {
+        "date": dates[-1].isoformat(),
+        "asset": asset_sym,
+        "reference": reference,
+        "fast": fast,
+        "slow": slow,
+        "stance": "LONG" if pos[-1] == 1 else "FLAT",
+        "long": bool(pos[-1] == 1),
+        "asset_price": round(cand[-1].close, 2),
+        "reference_level": round(ref[-1].close, 2),
+        "ratio": round(r[-1], 6),
+        "fast_sma": round(f[-1], 6) if f[-1] is not None else None,
+        "slow_sma": round(s[-1], 6) if s[-1] is not None else None,
+        "fast_vs_slow_pct": round((f[-1] / s[-1] - 1) * 100, 2) if f[-1] and s[-1] else None,
+        "last_flip_date": flip_date,
+        "last_flip_action": flip_action,
+        "last_flip_price": flip_price,
+    }
+
+
+def cmd_signal(args) -> int:
+    sig = compute_signal(args.asset, args.reference, args.fast, args.slow)
+    if args.json:
+        print(json.dumps(sig, indent=2))
+        return 0
+    print(f"\n  {sig['asset']} / {sig['reference']} momentum {sig['fast']}/{sig['slow']}  —  as of {sig['date']}\n")
+    print(f"  {sig['asset']:14}: ${sig['asset_price']:,.2f}")
+    print(f"  {sig['reference']:14}: {sig['reference_level']:,.2f}")
+    print(f"  ratio         : {sig['ratio']:.5f}")
+    print(f"  fast / slow   : {sig['fast_sma']:.5f} / {sig['slow_sma']:.5f}  ({sig['fast_vs_slow_pct']:+.2f}%)")
+    print(f"\n  >>> SIGNAL: {sig['stance']} {'(hold ' + sig['asset'].split('-')[0] + ')' if sig['long'] else '(in cash)'} <<<")
+    if sig["last_flip_date"]:
+        print(f"  last flip    : {sig['last_flip_action']} on {sig['last_flip_date']} @ ${sig['last_flip_price']:,.2f}")
+    print()
+    return 0
+
+
 def cmd_live(args) -> int:
     base, quote = (args.base, args.quote) if args.base else split_pair(args.pair)
     strat = strategies.build(args.strategy, args)
@@ -157,6 +219,14 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("strategies", help="List available strategies").set_defaults(func=cmd_strategies)
+
+    sg = sub.add_parser("signal", help="Show today's ratio-momentum stance (LONG/FLAT) for an asset/reference")
+    sg.add_argument("--asset", default="ETHUSD")
+    sg.add_argument("--reference", default="^RUT", help="Yahoo reference ticker (default Russell 2000)")
+    sg.add_argument("--fast", type=int, default=20)
+    sg.add_argument("--slow", type=int, default=50)
+    sg.add_argument("--json", action="store_true", help="emit JSON (used by the daily GHA workflow)")
+    sg.set_defaults(func=cmd_signal)
 
     bt = sub.add_parser("backtest", help="Backtest a strategy on historical candles")
     bt.add_argument("--pair", default="ETHUSD")

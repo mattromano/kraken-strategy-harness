@@ -1,0 +1,18 @@
+{
+  "date": "2026-06-10",
+  "asset": "ETH-USD",
+  "reference": "^RUT",
+  "fast": 20,
+  "slow": 50,
+  "stance": "FLAT",
+  "long": false,
+  "asset_price": 1639.69,
+  "reference_level": 2867.02,
+  "ratio": 0.574238,
+  "fast_sma": 0.662567,
+  "slow_sma": 0.752419,
+  "fast_vs_slow_pct": -11.94,
+  "last_flip_date": "2026-04-29",
+  "last_flip_action": "SELL",
+  "last_flip_price": 2253.42
+}

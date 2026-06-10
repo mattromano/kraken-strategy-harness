@@ -38,11 +38,20 @@ def fetch_ohlc_yahoo(
         f"?period1={p1}&period2={p2}&interval={yint}"
     )
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            payload = json.load(resp)
-    except Exception as e:  # network / HTTP errors
-        raise RuntimeError(f"Yahoo request failed for {symbol}: {e}") from e
+    # Retry with backoff — Yahoo occasionally rate-limits datacenter IPs (e.g. CI runners).
+    last_err: Exception | None = None
+    payload = None
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                payload = json.load(resp)
+            break
+        except Exception as e:  # network / HTTP / rate-limit errors
+            last_err = e
+            if attempt < 3:
+                time.sleep(2 ** attempt)  # 1s, 2s, 4s
+    if payload is None:
+        raise RuntimeError(f"Yahoo request failed for {symbol} after retries: {last_err}")
 
     chart = payload.get("chart", {})
     if chart.get("error"):

@@ -149,6 +149,26 @@ number (here $100k) can still be overfit; only out-of-sample testing tells them 
 
 > ⚠️ Backtest results on one asset over one historical window. Not predictive, not advice, paper only.
 
+## Daily signal monitor (GitHub Actions)
+
+A scheduled workflow (`.github/workflows/daily-signal.yml`) checks the robust ETH/Russell signal
+once a day and **opens a GitHub issue when the stance flips** (FLAT ↔ LONG) — so you get an email
+without running anything yourself.
+
+```bash
+# Check the live stance yourself anytime:
+python3 harness.py signal --asset ETHUSD --reference '^RUT' --fast 20 --slow 50
+python3 harness.py signal --json     # machine-readable (what the workflow consumes)
+```
+
+- Runs daily at 13:00 UTC (and on-demand via the Actions tab).
+- Compares the current stance to `state/last_signal.json`; on a change it opens an issue and commits
+  the new state (no commit on unchanged days, so no daily noise).
+- Stdlib + Yahoo only — no secrets, no API keys. Uses the built-in `GITHUB_TOKEN`.
+- Informational only — it does **not** place trades.
+
+> Note: GitHub disables scheduled workflows after ~60 days of repo inactivity; push or re-enable to resume.
+
 ## Design notes & caveats
 
 - **No look-ahead:** the position decided at candle *i-1*'s close is executed at candle *i*'s open.
